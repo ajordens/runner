@@ -48,28 +48,33 @@ namespace GitHub.Runner.Worker.Handlers
 
             string githubWorkspace = workspaceData.Value;
             bool followSymlink = false;
-            string pattern = "";
-            if (Parameters.Count == 1)
+            List<string> patterns = new List<string>();
+            var firstParameter = true;
+            foreach (var parameter in Parameters)
             {
-                pattern = Parameters[0].Evaluate(context).ConvertToString();
-            }
-            else
-            {
-                var option = Parameters[0].Evaluate(context).ConvertToString();
-                if (string.Equals(option, "--follow-symbolic-links", StringComparison.OrdinalIgnoreCase))
+                var parameterString = parameter.Evaluate(context).ConvertToString();
+                if (firstParameter)
                 {
-                    followSymlink = true;
-                }
-                else
-                {
-                    throw new ArgumentOutOfRangeException($"Invalid glob option {option}, avaliable option: '--follow-symbolic-links'.");
+                    firstParameter = false;
+                    if (parameterString.StartsWith("--"))
+                    {
+                        if (string.Equals(parameterString, "--follow-symbolic-links", StringComparison.OrdinalIgnoreCase))
+                        {
+                            followSymlink = true;
+                            continue;
+                        }
+                        else
+                        {
+                            throw new ArgumentOutOfRangeException($"Invalid glob option {parameterString}, avaliable option: '--follow-symbolic-links'.");
+                        }
+                    }
                 }
 
-                pattern = Parameters[1].Evaluate(context).ConvertToString();
+                patterns.Add(parameterString);
             }
 
             context.Trace.Info($"Search root directory: '{githubWorkspace}'");
-            context.Trace.Info($"Search pattern: '{pattern}'");
+            context.Trace.Info($"Search pattern: '{string.Join(", ", patterns)}'");
 
             string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
             string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
@@ -101,7 +106,7 @@ namespace GitHub.Runner.Worker.Handlers
             {
                 env["followSymbolicLinks"] = "true";
             }
-            env["pattern"] = pattern;
+            env["patterns"] = string.Join(Environment.NewLine, patterns);
 
             int exitCode = p.ExecuteAsync(workingDirectory: githubWorkspace,
                                           fileName: node,
@@ -112,7 +117,7 @@ namespace GitHub.Runner.Worker.Handlers
 
             if (exitCode != 0)
             {
-                throw new InvalidOperationException($"hashFiles('{ExpressionUtility.StringEscape(pattern)}') failed. Fail to hash files under directory '{githubWorkspace}'");
+                throw new InvalidOperationException($"hashFiles('{ExpressionUtility.StringEscape(string.Join(", ", patterns))}') failed. Fail to hash files under directory '{githubWorkspace}'");
             }
 
             return hashResult;

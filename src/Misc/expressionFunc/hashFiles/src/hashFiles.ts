@@ -9,19 +9,19 @@ async function run(): Promise<void> {
   // arg0 -> node
   // arg1 -> hashFiles.js
   // env[followSymbolicLinks] = true/null
-  // env[pattern] -> glob pattern
+  // env[patterns] -> glob patterns
   let followSymbolicLinks = false
-  const matchPattern = process.env['pattern'] || ''
+  const matchPatterns = process.env['patterns'] || ''
   if (process.env['followSymbolicLinks'] === 'true') {
     console.log('Follow symbolic links')
     followSymbolicLinks = true
   }
 
-  console.log(`Match Pattern: ${matchPattern}`)
+  console.log(`Match Pattern: ${matchPatterns}`)
   let hasMatch = false
   const githubWorkspace = process.cwd()
   const result = crypto.createHash('sha256')
-  const globber = await glob.create(matchPattern, {followSymbolicLinks})
+  const globber = await glob.create(matchPatterns, {followSymbolicLinks})
   for await (const file of globber.globGenerator()) {
     if (!hasMatch) {
       hasMatch = true
