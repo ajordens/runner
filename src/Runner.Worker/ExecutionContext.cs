@@ -570,7 +570,10 @@ namespace GitHub.Runner.Worker
             }
 
             // Expression functions
-            ExpressionConstants.UpdateFunction<Handlers.HashFiles>("hashFiles", 1, 2);
+            if (Variables.GetBoolean("System.HashFilesV2") == true)
+            {
+                ExpressionConstants.UpdateFunction<Handlers.HashFiles>("hashFiles", 1, 2);
+            }
 
             // Expression values
             if (message.ContextData?.Count > 0)
