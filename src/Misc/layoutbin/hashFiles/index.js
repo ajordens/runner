@@ -1500,22 +1500,23 @@ const crypto = __importStar(__webpack_require__(417));
 const fs = __importStar(__webpack_require__(747));
 const stream = __importStar(__webpack_require__(413));
 const util = __importStar(__webpack_require__(669));
+const path = __importStar(__webpack_require__(622));
 function run() {
     var e_1, _a;
     return __awaiter(this, void 0, void 0, function* () {
         // arg0 -> node
         // arg1 -> hashFiles.js
-        // arg2 -> glob options
-        // arg3 -> glob patterns
+        // env[followSymbolicLinks] = true/null
+        // env[pattern] -> glob pattern
         let followSymbolicLinks = false;
-        let matchPattern = process.argv[2];
-        if (process.argv[2] === '--followSymbolicLinks') {
+        const matchPattern = process.env['pattern'] || '';
+        if (process.env['followSymbolicLinks'] === 'true') {
             console.log('Follow symbolic links');
             followSymbolicLinks = true;
-            matchPattern = process.argv[3];
         }
         console.log(`Match Pattern: ${matchPattern}`);
         let hasMatch = false;
+        const githubWorkspace = process.cwd();
         const result = crypto.createHash('sha256');
         const globber = yield glob.create(matchPattern, { followSymbolicLinks });
         try {
@@ -1525,6 +1526,10 @@ function run() {
                     hasMatch = true;
                 }
                 console.log(file);
+                if (!file.startsWith(`${githubWorkspace}${path.sep}`)) {
+                    console.log(`Ignore '${file}' since it is not under GITHUB_WORKSPACE.`);
+                    continue;
+                }
                 const hash = crypto.createHash('sha256');
                 const pipeline = util.promisify(stream.pipeline);
                 yield pipeline(fs.createReadStream(file), hash);

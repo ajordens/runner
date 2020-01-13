@@ -6,6 +6,7 @@ using GitHub.DistributedTask.Pipelines.ObjectTemplating;
 using GitHub.Runner.Sdk;
 using System.Reflection;
 using System.Threading;
+using System.Collections.Generic;
 
 namespace GitHub.Runner.Worker.Handlers
 {
@@ -35,85 +36,86 @@ namespace GitHub.Runner.Worker.Handlers
             out ResultMemory resultMemory)
         {
             resultMemory = null;
+            var templateContext = context.State as DistributedTask.ObjectTemplating.TemplateContext;
+            ArgUtil.NotNull(templateContext, nameof(templateContext));
+            templateContext.ExpressionValues.TryGetValue(PipelineTemplateConstants.GitHub, out var githubContextData);
+            ArgUtil.NotNull(githubContextData, nameof(githubContextData));
+            var githubContext = githubContextData as DictionaryContextData;
+            ArgUtil.NotNull(githubContext, nameof(githubContext));
+            githubContext.TryGetValue(PipelineTemplateConstants.Workspace, out var workspace);
+            var workspaceData = workspace as StringContextData;
+            ArgUtil.NotNull(workspaceData, nameof(workspaceData));
 
-            // hashFiles() only works on the runner and only works with files under GITHUB_WORKSPACE
-            // Since GITHUB_WORKSPACE is set by runner, I am using that as the fact of this code runs on server or runner.
-            if (context.State is DistributedTask.ObjectTemplating.TemplateContext templateContext &&
-                templateContext.ExpressionValues.TryGetValue(PipelineTemplateConstants.GitHub, out var githubContextData) &&
-                githubContextData is DictionaryContextData githubContext &&
-                githubContext.TryGetValue(PipelineTemplateConstants.Workspace, out var workspace) == true &&
-                workspace is StringContextData workspaceData)
+            string githubWorkspace = workspaceData.Value;
+            bool followSymlink = false;
+            string pattern = "";
+            if (Parameters.Count == 1)
             {
-                string searchRoot = workspaceData.Value;
-                bool followSymlink = false;
-                string pattern = "";
-                if (Parameters.Count == 1)
-                {
-                    pattern = Parameters[0].Evaluate(context).ConvertToString();
-                }
-                else
-                {
-                    if (string.Equals(Parameters[0].Evaluate(context).ConvertToString(), "--followSymbolicLinks", StringComparison.OrdinalIgnoreCase))
-                    {
-                        followSymlink = true;
-                    }
-
-                    pattern = Parameters[1].Evaluate(context).ConvertToString();
-                }
-
-                context.Trace.Info($"Search root directory: '{searchRoot}'");
-                context.Trace.Info($"Search pattern: '{pattern}'");
-
-                string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
-                string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
-
-                string node = Path.Combine(runnerRoot, "externals", "node12", "bin", $"node{IOUtil.ExeExtension}");
-                string hashFilesScript = Path.Combine(binDir, "hashFiles");
-                var hashResult = string.Empty;
-                var p = new ProcessInvoker(new FunctionTrace(context.Trace));
-                p.ErrorDataReceived += ((_, data) =>
-                {
-                    if (!string.IsNullOrEmpty(data.Data) && data.Data.StartsWith("__OUTPUT__") && data.Data.EndsWith("__OUTPUT__"))
-                    {
-                        hashResult = data.Data.Substring(10, data.Data.Length - 20);
-                        context.Trace.Info($"Hash result: '{hashResult}'");
-                    }
-                    else
-                    {
-                        context.Trace.Info(data.Data);
-                    }
-                });
-
-                p.OutputDataReceived += ((_, data) =>
-                {
-                    context.Trace.Info(data.Data);
-                });
-
-                var hashFilesArgs = $"\"{hashFilesScript.Replace("\"", "\\\"")}\"";
-                if (followSymlink)
-                {
-                    hashFilesArgs = hashFilesArgs + " --followSymbolicLinks";
-                }
-
-                hashFilesArgs = hashFilesArgs + $" \"{pattern.Replace("\"", "\\\"")}\"";
-                int exitCode = p.ExecuteAsync(workingDirectory: searchRoot,
-                                              fileName: node,
-                                              arguments: hashFilesArgs,
-                                              environment: null,
-                                              requireExitCodeZero: false,
-                                              cancellationToken: new CancellationTokenSource(TimeSpan.FromMinutes(120)).Token).GetAwaiter().GetResult();
-
-                if (exitCode != 0)
-                {
-                    throw new InvalidOperationException($"hashFiles('{ExpressionUtility.StringEscape(pattern)}') failed. Fail to discover files under directory '{searchRoot}'");
-                }
-
-                return hashResult;
+                pattern = Parameters[0].Evaluate(context).ConvertToString();
             }
             else
             {
-                throw new InvalidOperationException("'hashfiles' expression function is only supported under runner context.");
+                var option = Parameters[0].Evaluate(context).ConvertToString();
+                if (string.Equals(option, "--follow-symbolic-links", StringComparison.OrdinalIgnoreCase))
+                {
+                    followSymlink = true;
+                }
+                else
+                {
+                    throw new ArgumentOutOfRangeException($"Invalid glob option {option}, avaliable option: '--follow-symbolic-links'.");
+                }
+
+                pattern = Parameters[1].Evaluate(context).ConvertToString();
             }
+
+            context.Trace.Info($"Search root directory: '{githubWorkspace}'");
+            context.Trace.Info($"Search pattern: '{pattern}'");
+
+            string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+            string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
+
+            string node = Path.Combine(runnerRoot, "externals", "node12", "bin", $"node{IOUtil.ExeExtension}");
+            string hashFilesScript = Path.Combine(binDir, "hashFiles");
+            var hashResult = string.Empty;
+            var p = new ProcessInvoker(new FunctionTrace(context.Trace));
+            p.ErrorDataReceived += ((_, data) =>
+            {
+                if (!string.IsNullOrEmpty(data.Data) && data.Data.StartsWith("__OUTPUT__") && data.Data.EndsWith("__OUTPUT__"))
+                {
+                    hashResult = data.Data.Substring(10, data.Data.Length - 20);
+                    context.Trace.Info($"Hash result: '{hashResult}'");
+                }
+                else
+                {
+                    context.Trace.Info(data.Data);
+                }
+            });
+
+            p.OutputDataReceived += ((_, data) =>
+            {
+                context.Trace.Info(data.Data);
+            });
+
+            var env = new Dictionary<string, string>();
+            if (followSymlink)
+            {
+                env["followSymbolicLinks"] = "true";
+            }
+            env["pattern"] = pattern;
+
+            int exitCode = p.ExecuteAsync(workingDirectory: githubWorkspace,
+                                          fileName: node,
+                                          arguments: $"\"{hashFilesScript.Replace("\"", "\\\"")}\"",
+                                          environment: env,
+                                          requireExitCodeZero: false,
+                                          cancellationToken: new CancellationTokenSource(TimeSpan.FromSeconds(120)).Token).GetAwaiter().GetResult();
+
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException($"hashFiles('{ExpressionUtility.StringEscape(pattern)}') failed. Fail to hash files under directory '{githubWorkspace}'");
+            }
+
+            return hashResult;
         }
     }
 }
