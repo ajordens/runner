@@ -1,0 +1,1 @@
+To update hashFiles under `Misc/layoutbin` run `npm run all`
