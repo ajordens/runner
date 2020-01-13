@@ -572,7 +572,7 @@ namespace GitHub.Runner.Worker
             // Expression functions
             if (Variables.GetBoolean("System.HashFilesV2") == true)
             {
-                ExpressionConstants.UpdateFunction<Handlers.HashFiles>("hashFiles", 1, 2);
+                ExpressionConstants.UpdateFunction<Handlers.HashFiles>("hashFiles", 1, int.MaxValue);
             }
 
             // Expression values
