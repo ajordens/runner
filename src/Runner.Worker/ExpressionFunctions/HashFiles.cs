@@ -1,18 +1,11 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using Minimatch;
 using System.IO;
-using System.Security.Cryptography;
 using GitHub.DistributedTask.Expressions2.Sdk;
 using GitHub.DistributedTask.Pipelines.ContextData;
 using GitHub.DistributedTask.Pipelines.ObjectTemplating;
-using GitHub.Runner.Common;
 using GitHub.Runner.Sdk;
 using System.Reflection;
 using System.Threading;
-using System.Runtime.Serialization;
 
 namespace GitHub.Runner.Worker.Handlers
 {
@@ -68,24 +61,13 @@ namespace GitHub.Runner.Worker.Handlers
                     pattern = Parameters[1].Evaluate(context).ConvertToString();
                 }
 
-
-                // Convert slashes on Windows
-                if (s_isWindows)
-                {
-                    pattern = pattern.Replace('\\', '/');
-                }
-
                 context.Trace.Info($"Search root directory: '{searchRoot}'");
                 context.Trace.Info($"Search pattern: '{pattern}'");
 
                 string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
                 string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
 
-                string node = Path.Combine(runnerRoot, "externals", "node12", "bin", "node");
-                if (s_isWindows)
-                {
-                    node = node + ".exe";
-                }
+                string node = Path.Combine(runnerRoot, "externals", "node12", "bin", $"node{IOUtil.ExeExtension}");
                 string hashFilesScript = Path.Combine(binDir, "hashFiles");
                 var hashResult = string.Empty;
                 var p = new ProcessInvoker(new FunctionTrace(context.Trace));
@@ -133,7 +115,5 @@ namespace GitHub.Runner.Worker.Handlers
                 throw new InvalidOperationException("'hashfiles' expression function is only supported under runner context.");
             }
         }
-
-        private static readonly bool s_isWindows = Environment.OSVersion.Platform != PlatformID.Unix && Environment.OSVersion.Platform != PlatformID.MacOSX;
     }
 }

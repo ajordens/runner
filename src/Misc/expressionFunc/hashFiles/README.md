@@ -1,1 +1,1 @@
-To update hashFiles under `Misc/layoutbin` run `npm run all`
+To update hashFiles under `Misc/layoutbin` run `npm install && npm run all`
